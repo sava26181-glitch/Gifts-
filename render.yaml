@@ -1,0 +1,11 @@
+# render.yaml
+services:
+  - type: web
+    name: gates-appsec-runner
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: APPSEC_IMPL
+        value: vuln
