@@ -7,9 +7,6 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'ios', 'mobile': True})
 
-# Твой рабочий токен зашит сюда для удобства
-VALID_INIT_DATA = "query_id=AAHxH9t7AgAAAPEf23tlPjvx&user=%7B%22id%22%3A6372925425%2C%22first_name%22%3A%22%D0%A1%D0%B0%D0%B2%D0%B5%D0%BB%D0%B8%D0%B9%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22forlua%22%2C%22language_code%22%3A%22ru%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FJienmeEDxdRAMavaJlXTxgqP1gcjCisC2cOUHrWkWBXFoQzkhnN3xKV3CO2OHI28.svg%22%7D&auth_date=1794813990&signature=cnpqCwSfPb4uP1nFbrNe3y3PJpreMi66GOTzCMXDcrCC8JIEQIii1v5shyq_qdCBSYCt1b9CJPSQx0udvGsEBg&hash=d50a448d9cde85acb03dff7169f95223e81f555e93ac7858ff5fda5883bd189f"
-
 HTML_UI = """
 <!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,7 +17,7 @@ HTML_UI = """
     pre { background: #000; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px; white-space: pre-wrap; }
 </style>
 <h2>Lucky Shot Exploit</h2>
-<p style="font-size:14px; color:#aaa;">Измени ставку в поле `amount_bet` и нажми кнопку. Если сервер её примет — мы получим предмет за копейки.</p>
+<p style="font-size:14px; color:#aaa;">Жми кнопку. Если Cloudflare блокирует — увидим HTML в ответе.</p>
 
 <button onclick="run()">PLAY LUCKY SHOT</button>
 <pre id="out">Waiting...</pre>
@@ -61,7 +58,6 @@ async function run() {
         out.textContent = "Error: " + e.message;
     } finally { btn.disabled = false; btn.textContent = "PLAY LUCKY SHOT"; }
 }
-// Сохраняем токен в браузере, чтобы не вставлять каждый раз
 if (!localStorage.getItem('tgInitData')) {
     const raw = prompt("Вставь свой initData (один раз):");
     if (raw) localStorage.setItem('tgInitData', raw.trim());
@@ -92,7 +88,13 @@ def lucky_shot():
     
     try:
         r = scraper.post(url, headers=headers, json=payload, timeout=20)
-        return jsonify({"status": r.status_code, "response": r.json()})
+        # Пытаемся распарсить JSON, если не получается — отдаем сырой текст
+        try:
+            res_json = r.json()
+        except:
+            res_json = r.text[:300] 
+            
+        return jsonify({"status": r.status_code, "response": res_json})
     except Exception as e:
         return jsonify({"error": str(e)})
 
